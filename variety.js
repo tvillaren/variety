@@ -87,8 +87,13 @@ Released by Maypop Inc, © 2012-2018, under the MIT License. */
     read('arrayEscape', 'XX');
     read('lastValue', false);
 
+    // Check if some excluded keys are patterns to match
+    config.patternsToExclude = config.excludeSubkeys.reduce(function (result, item) { if(item.indexOf('*') > -1) result.push(item.replace('*','')); return result;},[])
+    log('Patterns to exclude: ' + tojson(config.patternsToExclude));
     //Translate excludeSubkeys to set like object... using an object for compatibility...
-    config.excludeSubkeys = config.excludeSubkeys.reduce(function (result, item) { result[item+'.'] = true; return result; }, {});
+    config.excludeSubkeys = config.excludeSubkeys.reduce(function (result, item) { if(item.indexOf('*') === -1) result[item+'.'] = true; return result; }, {});
+
+
 
     return config;
   };
@@ -179,8 +184,9 @@ Released by Maypop Inc, © 2012-2018, under the MIT License. */
 
   //flattens object keys to 1D. i.e. {'key1':1,{'key2':{'key3':2}}} becomes {'key1':1,'key2.key3':2}
   //we assume no '.' characters in the keys, which is an OK assumption for MongoDB
-  var serializeDoc = function(doc, maxDepth, excludeSubkeys) {
+  var serializeDoc = function(doc, maxDepth, excludeSubkeys, patternsToExclude) {
     var result = {};
+    var patterns = patternsToExclude || [];
 
     //determining if an object is a Hash vs Array vs something else is hard
     //returns true, if object in argument may have nested objects and makes sense to analyse its content
@@ -197,8 +203,13 @@ Released by Maypop Inc, © 2012-2018, under the MIT License. */
     var arrayRegex = new RegExp('\\.' + config.arrayEscape + '\\d+' + config.arrayEscape + '\\.', 'g');
 
     function serialize(document, parentKey, maxDepth) {
-      if(Object.prototype.hasOwnProperty.call(excludeSubkeys, parentKey.replace(arrayRegex, '.')))
+      var key = parentKey.replace(arrayRegex, '.');
+      if(Object.prototype.hasOwnProperty.call(excludeSubkeys, key))
         return;
+
+      if(patterns.filter(function(pattern) { return key.indexOf(pattern) > -1 }).length > 0)
+        return;
+
       for(var key in document) {
         //skip over inherited properties such as string, length, etch
         if(!document.hasOwnProperty(key)) {
@@ -315,7 +326,7 @@ Released by Maypop Inc, © 2012-2018, under the MIT License. */
 
   // Merge the keys and types of current object into accumulator object
   var reduceDocuments = function(accumulator, object) {
-    var docResult = analyseDocument(serializeDoc(object, config.maxDepth, config.excludeSubkeys));
+    var docResult = analyseDocument(serializeDoc(object, config.maxDepth, config.excludeSubkeys, config.patternsToExclude));
     mergeDocument(docResult, accumulator);
     return accumulator;
   };
